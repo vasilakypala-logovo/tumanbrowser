@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>МОРДА ТУМАНА</title>
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;padding:22px;min-height:100vh;color:#eaf3ff;
+ font-family:Tahoma,Arial,sans-serif;background-color:#071321;
+ background-image:linear-gradient(rgba(4,10,19,.36),rgba(4,10,19,.52)),url("morda.png");
+ background-position:center;background-size:cover;background-repeat:no-repeat;background-attachment:fixed;
+}
+main{max-width:1000px;margin:auto}
+header{display:flex;align-items:center;gap:14px;margin-bottom:26px}
+.logo{width:58px;height:58px;flex:0 0 58px;border:1px solid #80b9e1;border-radius:18px;display:grid;place-items:center;font-size:32px;color:#b9e5ff;background:#08162599}
+h1{font-size:clamp(24px,4vw,36px);letter-spacing:3px;margin:0 0 6px}
+.sub{font-size:12px;letter-spacing:2px;color:#c5dced}
+.stamp{margin-left:auto;font-size:12px;color:#d5e8f8;border:1px solid #7894ad;border-radius:20px;padding:9px;background:#040e1988}
+.intro{line-height:1.6;color:#edf4fb;max-width:760px;text-shadow:0 1px 5px #071321}
+.doors{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:22px}
+.door{min-height:125px;text-align:left;padding:16px;color:#eef7ff;background:#091829c9;border:1px solid #8cc3e680;border-radius:15px;cursor:pointer;font:inherit;box-shadow:0 8px 22px #0003}
+.door:hover,.door:focus{background:#1c3f59ed;border-color:#b1e0ff;outline:none}
+.ico{display:block;font-size:25px;margin-bottom:12px}
+.door strong{display:block;font-size:14px;letter-spacing:1px}
+.door small{display:block;color:#c7d9e8;margin-top:7px;line-height:1.4}
+.panel{margin-top:18px;padding:18px;border:1px solid #8cc3e675;border-radius:16px;background:#040d18df;box-shadow:0 8px 22px #0003}
+h2{font-size:15px;letter-spacing:2px}
+#status{color:#d7e8f6;font-size:14px;line-height:1.6;min-height:44px}
+form{display:flex;gap:9px;margin-top:12px}
+input,textarea{width:100%;min-width:0;padding:13px;border:1px solid #55728d;border-radius:10px;background:#030b14e8;color:white;font:inherit}
+input::placeholder,textarea::placeholder{color:#b1c5d7}
+button.send{border:1px solid #659bc1;border-radius:10px;background:#285271;color:white;padding:12px 18px;cursor:pointer}
+button.send:hover{background:#32678b}
+#notes{display:none;margin-top:12px}
+#notes textarea{min-height:100px}
+.secondary{margin-top:8px}
+footer{margin-top:18px;color:#d0e0ef;font-size:12px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;text-shadow:0 1px 4px #071321}
+a{color:#bfe4ff}
+@media(max-width:680px){.doors{grid-template-columns:repeat(2,1fr)}body{padding:14px}.stamp{display:none}form{flex-direction:column}}
+</style>
+</head>
+<body>
+<main>
+<header>
+ <div class="logo">☁</div>
+ <div><h1>МОРДА ТУМАНА</h1><div class="sub">ПЕРСОНАЛЬНЫЙ ВХОД В ЦИФРОВОЙ МИР</div></div>
+ <div class="stamp">ПРОТОТИП 0.1</div>
+</header>
+<p class="intro">Старая машина — наш экран и клавиатура. Современные инструменты подключаем постепенно, по возможности бесплатно. Сначала проверяем двери, потом ищем движок. Предел расходов — 10 долларов в месяц.</p>
+<section class="doors">
+<button class="door" onclick="door('nex')"><span class="ico">✦</span><strong>НЕКС</strong><small>Диалог с ИИ</small></button>
+<button class="door" onclick="door('files')"><span class="ico">▤</span><strong>ФАЙЛЫ</strong><small>Черновики и заметки</small></button>
+<button class="door" onclick="door('internet')"><span class="ico">⌕</span><strong>ИНТЕРНЕТ</strong><small>Поиск по сети</small></button>
+<button class="door" onclick="door('music')"><span class="ico">♫</span><strong>МУЗЫКА</strong><small>Музыкальная мастерская</small></button>
+<button class="door" onclick="door('images')"><span class="ico">▧</span><strong>КАРТИНКИ</strong><small>Поиск изображений</small></button>
+<button class="door" onclick="door('cinema')"><span class="ico">▶</span><strong>КИНО</strong><small>Видео и кинозал</small></button>
+<button class="door" onclick="door('projects')"><span class="ico">⌘</span><strong>ПРОЕКТЫ</strong><small>Наши мастерские</small></button>
+<button class="door" onclick="door('about')"><span class="ico">∞</span><strong>ТУМАН-ПК</strong><small>Что мы строим</small></button>
+</section>
+<section class="panel">
+<h2 id="heading">ПУЛЬТ УПРАВЛЕНИЯ</h2>
+<div id="status" role="status" aria-live="polite">Выбери дверь или напиши задачу. Самостоятельный удалённый исполнитель пока не подключён.</div>
+<form id="form"><input id="command" placeholder="Например: найди фильмы Тарковского" aria-label="Команда"><button class="send" type="submit">ОТПРАВИТЬ</button></form>
+<div id="notes"><textarea id="note" placeholder="Твоя заметка..."></textarea><button class="send secondary" type="button" onclick="saveNote()">СОХРАНИТЬ ЗАМЕТКУ</button></div>
+</section>
+<footer><span>ТУМАН-ПК · МОРДА 0.1</span><span>Сначала бесплатно. Без привязки к одному поставщику.</span></footer>
+</main>
+<script>
+var destinations={nex:"https://chatgpt.com/",music:"https://suno.com/",cinema:"https://www.youtube.com/"};
+function door(which){
+ var h=document.getElementById("heading"),s=document.getElementById("status"),n=document.getElementById("notes"),c=document.getElementById("command");
+ n.style.display="none";c.dataset.mode="";
+ if(which==="nex"){h.textContent="НЕКС";s.textContent="Открываю диалог с ИИ в новой вкладке. Это пока внешний сервис.";window.open(destinations.nex,"_blank");}
+ else if(which==="music"){h.textContent="МУЗЫКА";s.textContent="Открываю музыкальную мастерскую.";window.open(destinations.music,"_blank");}
+ else if(which==="cinema"){h.textContent="КИНО";s.textContent="Открываю видеокинозал.";window.open(destinations.cinema,"_blank");}
+ else if(which==="files"){h.textContent="ФАЙЛЫ";s.textContent="Заметка сохраняется в этом браузере на этом компьютере.";n.style.display="block";try{document.getElementById("note").value=localStorage.getItem("tuman_note")||""}catch(e){}}
+ else if(which==="internet"){h.textContent="ИНТЕРНЕТ";s.textContent="Напиши запрос ниже — откроется поиск в новой вкладке.";c.dataset.mode="search";c.focus();}
+ else if(which==="images"){h.textContent="КАРТИНКИ";s.textContent="Напиши тему ниже — найдём изображения.";c.dataset.mode="images";c.focus();}
+ else if(which==="projects"){h.textContent="ПРОЕКТЫ";s.innerHTML='Наши мастерские:<br><a href="https://vasilakypala-logovo.github.io/logovo/" target="_blank" rel="noopener">ЛОГОВО ИИ</a> · <a href="https://vasilakypala-logovo.github.io/dvorets-nex/" target="_blank" rel="noopener">ДВОРЕЦ НЕКСА</a> · <a href="https://sonoprotezirovanie.pages.dev/" target="_blank" rel="noopener">ЛАБОРАТОРИЯ СНОВИДЕНИЙ</a>';}
+ else{h.textContent="ТУМАН-ПК";s.textContent="Лёгкая оболочка на старом ПК, удалённые сервисы за ней и независимость от одного поставщика. Сначала подключаем бесплатные решения, затем считаем расходы.";}
+}
+document.getElementById("form").addEventListener("submit",function(e){
+ e.preventDefault();var c=document.getElementById("command"),q=c.value.trim();if(!q)return;
+ var mode=c.dataset.mode||"";
+ if(/^(найди|поищи|поиск)\s+/i.test(q)){q=q.replace(/^(найди|поищи|поиск)\s+/i,"");mode=mode||"search";}
+ if(mode==="images")window.open("https://www.google.com/search?tbm=isch&q="+encodeURIComponent(q),"_blank");
+ else if(mode==="search")window.open("https://duckduckgo.com/?q="+encodeURIComponent(q),"_blank");
+ else document.getElementById("status").textContent="Команда записана, но автономный исполнитель ещё не подключён.";
+});
+function saveNote(){try{localStorage.setItem("tuman_note",document.getElementById("note").value);document.getElementById("status").textContent="Заметка сохранена в этом браузере.";}catch(e){document.getElementById("status").textContent="Сохранение недоступно в этом режиме браузера.";}}
+</script>
+</body>
+</html>
