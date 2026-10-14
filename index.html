@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>МОРДА ТУМАНА</title>
+<title>МАСКА ТУМАНА</title>
 
 <style>
 *{box-sizing:border-box}
@@ -271,10 +271,10 @@ a{color:#bfe4ff}
 <header>
  <div class="logo">🫧</div>
  <div>
-  <h1>МОРДА ТУМАНА</h1>
+  <h1>МАСКА ТУМАНА</h1>
   <div class="sub">ПЕРСОНАЛЬНЫЙ ВХОД В ЦИФРОВОЙ МИР</div>
  </div>
- <div class="stamp">ПРОТОТИП 0.2</div>
+ <div class="stamp">ПРОТОТИП 0.3</div>
 </header>
 
 <p class="intro">
@@ -288,7 +288,7 @@ a{color:#bfe4ff}
 
 <button class="door" onclick="door('nex')">
  <span class="ico">✦</span>
- <strong>НЕКС</strong>
+ <strong>ОБЛАЧНЫЙ</strong>
  <small>Облачный ИИ-диалог</small>
 </button>
 
@@ -374,7 +374,7 @@ a{color:#bfe4ff}
 <form id="form">
  <input
   id="command"
-  placeholder="Напиши задачу для Тумана…"
+  placeholder="Напиши задачу для Облачного…"
   aria-label="Команда"
  >
  <button class="send" id="sendButton" type="submit">
@@ -396,7 +396,7 @@ a{color:#bfe4ff}
 </section>
 
 <footer>
- <span>ТУМАН-ПК · МОРДА 0.2</span>
+ <span>ТУМАН-ПК · МАСКА 0.3</span>
  <span>Сначала бесплатно. Без привязки к одному поставщику.</span>
 </footer>
 
@@ -440,10 +440,10 @@ function door(which) {
   setView(which);
 
   if (which === "nex") {
-    heading.textContent = "НЕКС · ОБЛАЧНЫЙ ДИАЛОГ";
+    heading.textContent = "ОБЛАЧНЫЙ · ДИАЛОГ";
 
     status.textContent =
-      "Это отдельный облачный ИИ-движок Туман-ПК. " +
+      "Облачный — облачный ИИ-движок Туман-ПК. " +
       "История диалога хранится только в памяти открытой вкладки.";
 
     if (!el("accessCode").value) {
@@ -527,7 +527,7 @@ function addBubble(role, text) {
   var who = document.createElement("span");
   who.className = "who";
   who.textContent =
-    role === "user" ? "ВАСИЛИЙ МИХАЙЛОВИЧ" : "ТУМАН · ОБЛАЧНЫЙ ИИ";
+    role === "user" ? "ВАСИЛИЙ МИХАЙЛОВИЧ" : "ОБЛАЧНЫЙ · ИИ";
 
   var message = document.createElement("div");
   message.textContent = text;
@@ -641,12 +641,12 @@ el("form").addEventListener("submit", function(event) {
 
   if (!query || chatBusy) return;
 
+  /*
+   * Поиск запускается только после явного выбора
+   * двери «ИНТЕРНЕТ» или «КАРТИНКИ».
+   * Остальные команды отправляются Облачному.
+   */
   var mode = command.dataset.mode || "";
-
-  if (/^(найди|поищи|поиск)\s+/i.test(query)) {
-    query = query.replace(/^(найди|поищи|поиск)\s+/i, "");
-    mode = mode || "search";
-  }
 
   if (mode === "images") {
     command.value = "";
