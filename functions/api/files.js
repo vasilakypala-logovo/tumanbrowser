@@ -15,7 +15,6 @@ function json(data, status) {
 
 function sameOrigin(request) {
   const origin = request.headers.get("Origin");
-
   if (!origin) return true;
 
   try {
@@ -64,8 +63,6 @@ function getConfig(env) {
     "Accept": "application/json"
   };
 
-  // Старый service_role — JWT.
-  // Новый sb_secret_ передаётся как apikey.
   if (!key.startsWith("sb_secret_")) {
     headers["Authorization"] = "Bearer " + key;
   }
@@ -134,7 +131,6 @@ async function ensureBucket(cfg) {
 
   if (response.ok) return;
 
-  // Возможно, хранилище создал параллельный запрос.
   const verify = await fetch(url, {
     headers: cfg.headers
   });
@@ -158,11 +154,7 @@ async function ensureBucket(cfg) {
   );
 }
 
-/*
- * Кодируем исходное имя в UTF-8, затем в Base64URL.
- * В имени объекта остаются только ASCII-символы,
- * цифры, подчёркивания и дефисы.
- */
+/* Новые имена файлов храним в ASCII-совместимом формате. */
 
 function encodeFileName(value) {
   const bytes = new TextEncoder().encode(String(value || "file"));
@@ -225,21 +217,49 @@ function originalNameFromKey(key) {
 
   const suffix = match[2];
 
-  // Новые файлы получают префикс b64_.
   if (suffix.startsWith("b64_")) {
     const decoded = decodeFileName(suffix.slice(4));
-
     if (decoded) return decoded;
   }
 
-  // Поддержка старых файлов с ASCII-именами.
+  // Совместимость со старыми ASCII-именами.
   return suffix;
 }
 
-function makeObjectKey(originalName) {
-  return crypto.randomUUID() +
-    "__b64_" +
-    encodeFileName(originalName);
+function makeObjectKey(name) {
+  return crypto.randomUUID() + "__b64_" + encodeFileName(name);
+}
+
+/*
+ * При скачивании принимаем:
+ * 1. Новые ключи с префиксом b64_.
+ * 2. Старые ключи с ASCII-именем.
+ *
+ * Слеши, обратные слеши и имена с управляющими символами
+ * в старом формате не допускаются.
+ */
+
+function validKey(key) {
+  if (typeof key !== "string" || key.length > 900) {
+    return false;
+  }
+
+  if (/^[0-9a-f-]{36}__b64_[A-Za-z0-9_-]+$/i.test(key)) {
+    return true;
+  }
+
+  if (!/^[0-9a-f-]{36}__/.test(key)) {
+    return false;
+  }
+
+  const oldName = key.slice(38);
+
+  return oldName.length > 0 &&
+    oldName.length <= 180 &&
+    /^[\x20-\x7E]+$/.test(oldName) &&
+    !/[\\/]/.test(oldName) &&
+    oldName.trim() === oldName &&
+    oldName.charAt(0) !== ".";
 }
 
 function encodeObjectPath(path) {
@@ -247,12 +267,6 @@ function encodeObjectPath(path) {
     .split("/")
     .map(encodeURIComponent)
     .join("/");
-}
-
-function validKey(key) {
-  return typeof key === "string" &&
-    key.length <= 900 &&
-    /^[0-9a-f-]{36}__b64_[A-Za-z0-9_-]+$/i.test(key);
 }
 
 async function onGet(request, env) {
@@ -275,8 +289,7 @@ async function onGet(request, env) {
     await ensureBucket(cfg);
   } catch (error) {
     return json({
-      error: error.message ||
-        "Не удалось подключить Обитель."
+      error: error.message || "Не удалось подключить Обитель."
     }, 503);
   }
 
@@ -326,9 +339,7 @@ async function onGet(request, env) {
           return {
             name: item.name,
             originalName: originalNameFromKey(item.name),
-            size: Number(
-              meta.size || meta.contentLength || 0
-            ),
+            size: Number(meta.size || meta.contentLength || 0),
             type: String(
               meta.mimetype ||
               meta.contentType ||
@@ -452,15 +463,11 @@ async function onPost(request, env) {
     typeof file === "string" ||
     typeof file.stream !== "function"
   ) {
-    return json({
-      error: "Файл не найден."
-    }, 400);
+    return json({ error: "Файл не найден." }, 400);
   }
 
   if (file.size < 1) {
-    return json({
-      error: "Пустой файл."
-    }, 400);
+    return json({ error: "Пустой файл." }, 400);
   }
 
   if (file.size > MAX_FILE_SIZE) {
@@ -469,7 +476,6 @@ async function onPost(request, env) {
     }, 413);
   }
 
-  // Исходное имя сохраняем отдельно от технического ключа.
   const name = safeOriginalName(file.name);
   const key = makeObjectKey(name);
 
@@ -480,8 +486,7 @@ async function onPost(request, env) {
     await ensureBucket(cfg);
   } catch (error) {
     return json({
-      error: error.message ||
-        "Не удалось подключить Обитель."
+      error: error.message || "Не удалось подключить Обитель."
     }, 503);
   }
 
@@ -493,8 +498,7 @@ async function onPost(request, env) {
       {
         method: "POST",
         headers: Object.assign({}, cfg.headers, {
-          "Content-Type": file.type ||
-            "application/octet-stream",
+          "Content-Type": file.type || "application/octet-stream",
           "x-upsert": "false",
           "cache-control": "3600"
         }),
