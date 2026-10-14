@@ -58,7 +58,6 @@ h1{
 }
 
 .subtitle{color:var(--muted);font-size:12px}
-
 .spacer{flex:1}
 
 button,.file-label{
@@ -221,6 +220,95 @@ input[type=password]{
 
 .empty-icon{font-size:43px}
 
+/* Окно просмотра */
+
+.preview-overlay{
+  position:fixed;
+  inset:0;
+  z-index:9999;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:16px;
+  background:rgba(0,5,12,.88);
+}
+
+.preview-dialog{
+  width:min(1120px,100%);
+  max-height:100%;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  border:1px solid #537895;
+  border-radius:14px;
+  background:#071321;
+  box-shadow:0 16px 60px #000b;
+}
+
+.preview-bar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  flex-wrap:wrap;
+  gap:10px;
+  padding:10px 14px;
+  border-bottom:1px solid #36536e;
+}
+
+#previewTitle{
+  min-width:0;
+  overflow-wrap:anywhere;
+  font-size:13px;
+}
+
+.preview-actions{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+}
+
+#previewContent{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  min-height:160px;
+  max-height:calc(100vh - 100px);
+  overflow:auto;
+  padding:12px;
+}
+
+#previewContent img{
+  display:block;
+  max-width:100%;
+  max-height:calc(100vh - 150px);
+  object-fit:contain;
+}
+
+#previewContent video{
+  display:block;
+  max-width:100%;
+  max-height:calc(100vh - 150px);
+}
+
+#previewContent audio{
+  width:min(620px,90vw);
+}
+
+#previewContent iframe{
+  width:min(1000px,88vw);
+  height:calc(100vh - 150px);
+  min-height:300px;
+  border:0;
+  background:white;
+}
+
+.preview-message{
+  color:#c6d9e9;
+  line-height:1.6;
+  text-align:center;
+  padding:24px;
+}
+
 footer{
   color:#8ea9bf;
   font-size:11px;
@@ -310,8 +398,9 @@ footer{
 
     <p class="tip">
       Перетаскивай иконки мышью между ячейками.
-      Нажми на иконку, чтобы скачать файл.
-      Можно также перетащить файлы прямо с компьютера на поле.
+      Нажми на изображение, видео, аудио или PDF для просмотра.
+      Остальные файлы скачиваются. Можно также перетащить файлы
+      прямо с компьютера на поле.
     </p>
   </div>
 
@@ -321,6 +410,22 @@ footer{
     </div>
   </div>
 </section>
+
+<div id="previewOverlay" class="preview-overlay" hidden
+  role="dialog" aria-modal="true" aria-label="Просмотр файла">
+  <div class="preview-dialog">
+    <div class="preview-bar">
+      <strong id="previewTitle">Просмотр файла</strong>
+      <div class="preview-actions">
+        <button type="button" id="previewDownloadButton">↓ СКАЧАТЬ</button>
+        <button type="button" id="previewCloseButton">ЗАКРЫТЬ</button>
+      </div>
+    </div>
+    <div id="previewContent">
+      <div class="preview-message">Выбери файл для просмотра.</div>
+    </div>
+  </div>
+</div>
 
 <footer>
   ОБИТЕЛЬ · ФАЙЛЫ ХРАНЯТСЯ В ЗАКРЫТОМ ХРАНИЛИЩЕ.
@@ -343,6 +448,9 @@ footer{
   var files = [];
   var positions = {};
   var busy = false;
+  var currentPreviewUrl = "";
+  var currentPreviewName = "";
+  var previewRequestId = 0;
 
   function el(id){
     return document.getElementById(id);
@@ -399,6 +507,162 @@ footer{
     return "📦";
   }
 
+  function previewKind(file){
+    var name = String(file.originalName || "").toLowerCase();
+    var type = String(file.type || "").toLowerCase();
+
+    if(type.indexOf("image/") === 0 ||
+       /\.(png|jpe?g|gif|webp|bmp|avif|svg|tif?f)$/.test(name)){
+      return "image";
+    }
+
+    if(type.indexOf("video/") === 0 ||
+       /\.(mp4|webm|mov|ogv|m4v)$/.test(name)){
+      return "video";
+    }
+
+    if(type.indexOf("audio/") === 0 ||
+       /\.(mp3|wav|ogg|flac|m4a|aac|opus)$/.test(name)){
+      return "audio";
+    }
+
+    if(type === "application/pdf" || /\.pdf$/.test(name)){
+      return "pdf";
+    }
+
+    return "";
+  }
+
+  function previewMime(file){
+    var type = String(file.type || "").toLowerCase();
+
+    if(type && type !== "application/octet-stream"){
+      return type;
+    }
+
+    var name = String(file.originalName || "").toLowerCase();
+    var map = {
+      ".jpg":"image/jpeg",
+      ".jpeg":"image/jpeg",
+      ".png":"image/png",
+      ".gif":"image/gif",
+      ".webp":"image/webp",
+      ".bmp":"image/bmp",
+      ".svg":"image/svg+xml",
+      ".tif":"image/tiff",
+      ".tiff":"image/tiff",
+      ".avif":"image/avif",
+      ".mp4":"video/mp4",
+      ".webm":"video/webm",
+      ".mov":"video/quicktime",
+      ".mp3":"audio/mpeg",
+      ".wav":"audio/wav",
+      ".ogg":"audio/ogg",
+      ".pdf":"application/pdf"
+    };
+
+    var ext = name.match(/\.[a-z0-9]+$/);
+    return (ext && map[ext[0]]) || type || "application/octet-stream";
+  }
+
+  function closePreview(){
+    previewRequestId++;
+    el("previewOverlay").hidden = true;
+    el("previewContent").textContent = "";
+
+    if(currentPreviewUrl){
+      URL.revokeObjectURL(currentPreviewUrl);
+      currentPreviewUrl = "";
+    }
+
+    currentPreviewName = "";
+  }
+
+  async function openFile(file){
+    var kind = previewKind(file);
+
+    if(!kind){
+      downloadFile(file);
+      return;
+    }
+
+    var requestId = ++previewRequestId;
+
+    if(currentPreviewUrl){
+      URL.revokeObjectURL(currentPreviewUrl);
+      currentPreviewUrl = "";
+    }
+
+    currentPreviewName = file.originalName || "файл";
+    el("previewTitle").textContent = currentPreviewName;
+    el("previewContent").innerHTML =
+      '<div class="preview-message">Загружаю файл из Обители…</div>';
+    el("previewOverlay").hidden = false;
+    say("Получаю файл для просмотра: " + currentPreviewName + "…");
+
+    try{
+      var result = await apiRequest(
+        API + "?action=download&name=" + encodeURIComponent(file.name),
+        {method:"GET"}
+      );
+
+      var blob = await result.response.blob();
+
+      if(requestId !== previewRequestId) return;
+
+      var mime = previewMime(file);
+
+      if((!blob.type || blob.type === "application/octet-stream") &&
+         mime !== "application/octet-stream"){
+        blob = new Blob([blob],{type:mime});
+      }
+
+      currentPreviewUrl = URL.createObjectURL(blob);
+
+      var content = el("previewContent");
+      content.textContent = "";
+
+      var media;
+
+      if(kind === "image"){
+        media = document.createElement("img");
+        media.alt = currentPreviewName;
+        media.src = currentPreviewUrl;
+      }else if(kind === "video"){
+        media = document.createElement("video");
+        media.src = currentPreviewUrl;
+        media.controls = true;
+        media.autoplay = false;
+        media.preload = "metadata";
+      }else if(kind === "audio"){
+        media = document.createElement("audio");
+        media.src = currentPreviewUrl;
+        media.controls = true;
+        media.preload = "metadata";
+      }else{
+        media = document.createElement("iframe");
+        media.src = currentPreviewUrl;
+        media.title = currentPreviewName;
+      }
+
+      content.appendChild(media);
+
+      if(kind === "image"){
+        media.addEventListener("error",function(){
+          say("Изображение получено, но браузер не смог показать его формат.");
+        });
+      }
+
+      say("Просмотр открыт: " + currentPreviewName);
+    }catch(error){
+      if(requestId !== previewRequestId) return;
+
+      el("previewContent").textContent =
+        error.message || "Не удалось открыть файл.";
+      say(error.message || "Не удалось открыть файл.");
+    }
+  }
+
   async function apiRequest(url,options){
     var response = await fetch(url,Object.assign({},options || {},{
       cache:"no-store",
@@ -446,7 +710,8 @@ footer{
     tile.className = "tile";
     tile.draggable = true;
     tile.tabIndex = 0;
-    tile.title = escapeName(file.originalName) + " — нажми, чтобы скачать";
+    tile.title = escapeName(file.originalName) +
+      (previewKind(file) ? " — нажми, чтобы посмотреть" : " — нажми, чтобы скачать");
     tile.dataset.name = file.name;
     tile.style.setProperty("--delay",Math.min(index*22,330)+"ms");
     tile.style.setProperty("--dx",(Math.random()*130-65)+"px");
@@ -469,13 +734,13 @@ footer{
     tile.appendChild(size);
 
     tile.addEventListener("click",function(){
-      downloadFile(file);
+      openFile(file);
     });
 
     tile.addEventListener("keydown",function(event){
       if(event.key === "Enter" || event.key === " "){
         event.preventDefault();
-        downloadFile(file);
+        openFile(file);
       }
     });
 
@@ -503,6 +768,7 @@ footer{
     grid.textContent = "";
 
     var maxSlot = -1;
+
     files.forEach(function(file){
       maxSlot = Math.max(maxSlot,positions[file.name]);
     });
@@ -519,7 +785,8 @@ footer{
 
       cell.addEventListener("dragover",function(event){
         event.preventDefault();
-        event.dataTransfer.dropEffect = event.dataTransfer.files.length ? "copy" : "move";
+        event.dataTransfer.dropEffect =
+          event.dataTransfer.files.length ? "copy" : "move";
         this.classList.add("over");
       });
 
@@ -538,7 +805,11 @@ footer{
         }
 
         var dragged = event.dataTransfer.getData("text/plain");
-        if(!dragged || !Object.prototype.hasOwnProperty.call(positions,dragged)) return;
+
+        if(!dragged ||
+           !Object.prototype.hasOwnProperty.call(positions,dragged)){
+          return;
+        }
 
         var target = Number(this.dataset.index);
         var old = Number(positions[dragged]);
@@ -574,7 +845,11 @@ footer{
     if(files.length === 0){
       var empty = document.createElement("div");
       empty.className = "empty";
-      empty.innerHTML = '<div class="empty-icon">☁️</div><strong>ОБИТЕЛЬ ПОКА ПУСТА</strong><div>Добавь первый файл с компьютера.</div>';
+      empty.innerHTML =
+        '<div class="empty-icon">☁️</div>' +
+        '<strong>ОБИТЕЛЬ ПОКА ПУСТА</strong>' +
+        '<div>Добавь первый файл с компьютера.</div>';
+
       grid.textContent = "";
       grid.appendChild(empty);
     }
@@ -584,15 +859,23 @@ footer{
 
   async function loadFiles(){
     if(busy) return;
+
     busy = true;
     el("refreshButton").disabled = true;
     say("Проверяю хранилище и получаю список файлов…");
 
     try{
-      var result = await apiRequest(API + "?action=list",{method:"GET"});
-      files = result.data && Array.isArray(result.data.files) ? result.data.files : [];
+      var result = await apiRequest(
+        API + "?action=list",
+        {method:"GET"}
+      );
+
+      files = result.data && Array.isArray(result.data.files)
+        ? result.data.files : [];
+
       positions = readPositions();
       render();
+
       say("Соединение установлено. Файлы в Обители: " + files.length + ".");
     }catch(error){
       say(error.message || "Не удалось получить список файлов.");
@@ -632,8 +915,7 @@ footer{
           });
 
           if(result.data && result.data.file){
-            var saved = result.data.file;
-            positions[saved.name] = undefined;
+            positions[result.data.file.name] = undefined;
           }
 
           success++;
@@ -652,20 +934,28 @@ footer{
 
   async function refreshAfterUpload(success,errors){
     try{
-      var result = await apiRequest(API + "?action=list",{method:"GET"});
-      files = result.data && Array.isArray(result.data.files) ? result.data.files : [];
+      var result = await apiRequest(
+        API + "?action=list",
+        {method:"GET"}
+      );
+
+      files = result.data && Array.isArray(result.data.files)
+        ? result.data.files : [];
+
       positions = readPositions();
       render();
 
       var message = "Загрузка завершена. Успешно: " + success + ".";
 
       if(errors.length){
-        message += " Не удалось загрузить: " + errors.length + ". " + errors.slice(0,3).join("; ");
+        message += " Не удалось загрузить: " +
+          errors.length + ". " + errors.slice(0,3).join("; ");
       }
 
       say(message);
     }catch(error){
-      say("Файлы отправлены: " + success + ". Не удалось обновить список: " + error.message);
+      say("Файлы отправлены: " + success +
+        ". Не удалось обновить список: " + error.message);
     }
   }
 
@@ -724,7 +1014,9 @@ footer{
 
     apiRequest(API + "?action=list",{method:"GET"})
       .then(function(result){
-        files = result.data && Array.isArray(result.data.files) ? result.data.files : [];
+        files = result.data && Array.isArray(result.data.files)
+          ? result.data.files : [];
+
         positions = readPositions();
 
         try{
@@ -734,6 +1026,7 @@ footer{
         el("loginPanel").hidden = true;
         el("workspace").hidden = false;
         render();
+
         say("Вход выполнен. Файлов в Обители: " + files.length + ".");
       })
       .catch(function(error){
@@ -751,10 +1044,40 @@ footer{
 
   el("refreshButton").addEventListener("click",loadFiles);
 
+  el("previewCloseButton").addEventListener("click",closePreview);
+
+  el("previewOverlay").addEventListener("click",function(event){
+    if(event.target === this) closePreview();
+  });
+
+  el("previewDownloadButton").addEventListener("click",function(){
+    if(!currentPreviewUrl || !currentPreviewName) return;
+
+    var link = document.createElement("a");
+    link.href = currentPreviewUrl;
+    link.download = currentPreviewName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    say("Файл подготовлен к скачиванию: " + currentPreviewName);
+  });
+
+  document.addEventListener("keydown",function(event){
+    if(event.key === "Escape" && !el("previewOverlay").hidden){
+      closePreview();
+    }
+  });
+
   el("logoutButton").addEventListener("click",function(){
+    closePreview();
     key = "";
     files = [];
-    try{sessionStorage.removeItem(SESSION_KEY);}catch(_){}
+
+    try{
+      sessionStorage.removeItem(SESSION_KEY);
+    }catch(_){}
+
     el("workspace").hidden = true;
     el("loginPanel").hidden = false;
     el("accessCode").value = "";
@@ -767,13 +1090,17 @@ footer{
   });
 
   el("grid").addEventListener("dragover",function(event){
-    if(event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files.length){
+    if(event.dataTransfer &&
+       event.dataTransfer.files &&
+       event.dataTransfer.files.length){
       event.preventDefault();
     }
   });
 
   el("grid").addEventListener("drop",function(event){
-    if(event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files.length){
+    if(event.dataTransfer &&
+       event.dataTransfer.files &&
+       event.dataTransfer.files.length){
       event.preventDefault();
       uploadFiles(Array.prototype.slice.call(event.dataTransfer.files));
     }
@@ -781,6 +1108,7 @@ footer{
 
   try{
     var savedKey = sessionStorage.getItem(SESSION_KEY);
+
     if(savedKey && savedKey.length >= 20){
       key = savedKey;
       el("accessCode").value = savedKey;
@@ -791,4 +1119,3 @@ footer{
 </script>
 </body>
 </html>
-
