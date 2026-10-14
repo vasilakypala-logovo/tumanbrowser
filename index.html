@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -295,7 +296,7 @@ a{color:#bfe4ff}
 <button class="door" onclick="door('files')">
  <span class="ico">▤</span>
  <strong>ФАЙЛЫ</strong>
- <small>Черновики и заметки</small>
+ <small>Личное облачное хранилище</small>
 </button>
 
 <button class="door" onclick="door('internet')">
@@ -417,7 +418,7 @@ function el(id) {
 
 function setView(which) {
   el("notes").style.display =
-    which === "files" ? "block" : "none";
+    which === "notes" ? "block" : "none";
 
   el("chatHistory").style.display =
     which === "nex" ? "flex" : "none";
@@ -466,16 +467,17 @@ function door(which) {
   }
 
   else if (which === "files") {
-    heading.textContent = "ФАЙЛЫ";
+    heading.textContent = "ОБИТЕЛЬ ФАЙЛОВ";
     status.textContent =
-      "Заметка сохраняется только в этом браузере на этом компьютере.";
+      "Открываю Обитель файлов в новой вкладке…";
 
-    try {
-      el("note").value =
-        localStorage.getItem("tuman_note") || "";
-    } catch (_) {
+    command.dataset.mode = "";
+
+    var fileWindow = window.open("/files.html", "_blank");
+
+    if (!fileWindow) {
       status.textContent =
-        "Локальное хранилище недоступно. Можно скопировать заметку вручную.";
+        "Браузер заблокировал новую вкладку. Разреши всплывающие окна для tumanbrowser.pages.dev и нажми «ФАЙЛЫ» ещё раз.";
     }
   }
 
