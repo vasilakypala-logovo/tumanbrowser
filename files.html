@@ -160,6 +160,7 @@ input[type=password]{
 }
 
 .tile{
+  position:relative;
   width:100%;
   height:100%;
   min-width:0;
@@ -203,6 +204,34 @@ input[type=password]{
   font-size:10px;
 }
 
+/* Небольшая кнопка удаления в углу каждой иконки. */
+.delete-tile{
+  position:absolute;
+  top:3px;
+  right:3px;
+  z-index:3;
+  width:25px;
+  height:25px;
+  min-width:25px;
+  padding:0;
+  display:grid;
+  place-items:center;
+  border-radius:7px;
+  background:#542831;
+  border:1px solid #a86570;
+  color:#ffe8eb;
+  font:bold 17px Arial,sans-serif;
+  line-height:1;
+  opacity:.86;
+  cursor:pointer;
+}
+
+.delete-tile:hover{
+  background:#a52b40;
+  border-color:#ff9aa9;
+  opacity:1;
+}
+
 .empty{
   grid-column:1/-1;
   min-height:230px;
@@ -221,7 +250,6 @@ input[type=password]{
 .empty-icon{font-size:43px}
 
 /* Окно просмотра */
-
 .preview-overlay{
   position:fixed;
   inset:0;
@@ -290,9 +318,7 @@ input[type=password]{
   max-height:calc(100vh - 150px);
 }
 
-#previewContent audio{
-  width:min(620px,90vw);
-}
+#previewContent audio{width:min(620px,90vw)}
 
 #previewContent iframe{
   width:min(1000px,88vw);
@@ -399,8 +425,8 @@ footer{
     <p class="tip">
       Перетаскивай иконки мышью между ячейками.
       Нажми на изображение, видео, аудио или PDF для просмотра.
-      Остальные файлы скачиваются. Можно также перетащить файлы
-      прямо с компьютера на поле.
+      Остальные файлы скачиваются. Крестик в углу удаляет файл.
+      Можно также перетащить файлы прямо с компьютера на поле.
     </p>
   </div>
 
@@ -733,11 +759,31 @@ footer{
     tile.appendChild(name);
     tile.appendChild(size);
 
-    tile.addEventListener("click",function(){
+    // Крестик удаляет именно этот файл, а не открывает просмотр.
+    var removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.className = "delete-tile";
+    removeButton.textContent = "×";
+    removeButton.title = "Удалить файл из Обители";
+    removeButton.setAttribute("aria-label",
+      "Удалить " + escapeName(file.originalName));
+
+    removeButton.addEventListener("click",function(event){
+      event.preventDefault();
+      event.stopPropagation();
+      deleteFile(file);
+    });
+
+    tile.appendChild(removeButton);
+
+    tile.addEventListener("click",function(event){
+      if(event.target.closest(".delete-tile")) return;
       openFile(file);
     });
 
     tile.addEventListener("keydown",function(event){
+      if(event.target !== tile) return;
+
       if(event.key === "Enter" || event.key === " "){
         event.preventDefault();
         openFile(file);
@@ -745,6 +791,11 @@ footer{
     });
 
     tile.addEventListener("dragstart",function(event){
+      if(event.target.closest(".delete-tile")){
+        event.preventDefault();
+        return;
+      }
+
       event.dataTransfer.setData("text/plain",file.name);
       event.dataTransfer.effectAllowed = "move";
       tile.style.opacity = ".45";
@@ -752,6 +803,7 @@ footer{
 
     tile.addEventListener("dragend",function(){
       tile.style.opacity = "1";
+
       var cells = el("grid").querySelectorAll(".cell");
       Array.prototype.forEach.call(cells,function(cell){
         cell.classList.remove("over");
@@ -956,6 +1008,50 @@ footer{
     }catch(error){
       say("Файлы отправлены: " + success +
         ". Не удалось обновить список: " + error.message);
+    }
+  }
+
+  async function deleteFile(file){
+    if(busy) return;
+
+    var name = String(file.originalName || "файл");
+
+    var confirmed = window.confirm(
+      "Удалить «" + name + "» из Обители?\n\n" +
+      "Файл будет удалён из облачного хранилища. " +
+      "Это действие нельзя отменить."
+    );
+
+    if(!confirmed) return;
+
+    busy = true;
+    el("refreshButton").disabled = true;
+    say("Удаляю файл из Обители: " + name + "…");
+
+    try{
+      var result = await apiRequest(
+        API + "?name=" + encodeURIComponent(file.name),
+        {method:"DELETE"}
+      );
+
+      if(!result.data || result.data.ok !== true){
+        throw new Error("Сервер не подтвердил удаление файла.");
+      }
+
+      files = files.filter(function(item){
+        return item.name !== file.name;
+      });
+
+      delete positions[file.name];
+      savePositions();
+      render();
+
+      say("Файл удалён из Обители: " + name);
+    }catch(error){
+      say(error.message || "Не удалось удалить файл.");
+    }finally{
+      busy = false;
+      el("refreshButton").disabled = false;
     }
   }
 
