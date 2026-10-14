@@ -626,4 +626,53 @@ export async function onRequestPost({ request, env }) {
       }
 
       for (const rawCall of calls.slice(0, 2)) {
-        const call = parseCall(raw
+        const call = parseCall(rawCall);
+
+        if (!call) {
+          modelMessages.push({
+            role: "tool",
+            name: "unknown",
+            content: JSON.stringify({
+              ok: false,
+              error: "Не удалось разобрать вызов инструмента."
+            })
+          });
+
+          continue;
+        }
+
+        const toolResult = await executeTool(
+          call.name,
+          call.arguments
+        );
+
+        /*
+         * Важно: Workers AI принимает результат
+         * традиционного инструмента как сообщение role=tool
+         * с именем инструмента. Не добавляем вымышленное
+         * сообщение assistant с JSON вместо ответа модели.
+         */
+        modelMessages.push({
+          role: "tool",
+          name: call.name,
+          content: JSON.stringify(toolResult)
+        });
+      }
+    }
+
+    return json({
+      error:
+        "Достигнут предел вызовов инструментов. " +
+        "Попробуй задать вопрос короче."
+    }, 502, request);
+
+  } catch (error) {
+    return json({
+      error:
+        "Сбой вызова Workers AI или обработки инструмента. " +
+        "Подробность: " +
+        String(error && error.message ? error.message : "неизвестная ошибка")
+          .slice(0, 180)
+    }, 502, request);
+  }
+}
