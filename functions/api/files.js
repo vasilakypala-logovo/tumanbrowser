@@ -230,24 +230,17 @@ function makeObjectKey(name) {
   return crypto.randomUUID() + "__b64_" + encodeFileName(name);
 }
 
-/*
- * При скачивании принимаем:
- * 1. Новые ключи с префиксом b64_.
- * 2. Старые ключи с ASCII-именем.
- *
- * Слеши, обратные слеши и имена с управляющими символами
- * в старом формате не допускаются.
- */
-
 function validKey(key) {
   if (typeof key !== "string" || key.length > 900) {
     return false;
   }
 
+  // Новые ключи.
   if (/^[0-9a-f-]{36}__b64_[A-Za-z0-9_-]+$/i.test(key)) {
     return true;
   }
 
+  // Старые ключи с латинскими именами.
   if (!/^[0-9a-f-]{36}__/.test(key)) {
     return false;
   }
@@ -425,6 +418,73 @@ async function onGet(request, env) {
   }, 400);
 }
 
+async function onDelete(request, env) {
+  if (!sameOrigin(request)) {
+    return json({
+      error: "Запрос с другого сайта запрещён."
+    }, 403);
+  }
+
+  if (!authorized(request, env)) {
+    return json({
+      error: "Код доступа не принят."
+    }, 401);
+  }
+
+  const url = new URL(request.url);
+  const key = url.searchParams.get("name") || "";
+
+  if (!validKey(key)) {
+    return json({
+      error: "Неверное имя файла. Удаление отменено."
+    }, 400);
+  }
+
+  let cfg;
+
+  try {
+    cfg = getConfig(env);
+    await ensureBucket(cfg);
+  } catch (error) {
+    return json({
+      error: error.message || "Не удалось подключить Обитель."
+    }, 503);
+  }
+
+  try {
+    const response = await fetch(
+      cfg.base + "/storage/v1/object/" +
+      encodeURIComponent(cfg.bucket),
+      {
+        method: "DELETE",
+        headers: Object.assign({}, cfg.headers, {
+          "Content-Type": "application/json"
+        }),
+        body: JSON.stringify({
+          prefixes: [key]
+        })
+      }
+    );
+
+    if (!response.ok) {
+      return json({
+        error: "Supabase не удалил файл: " +
+          await errorText(response)
+      }, 502);
+    }
+
+    return json({
+      ok: true,
+      deleted: key
+    });
+  } catch (error) {
+    return json({
+      error: "Ошибка удаления: " +
+        (error.message || "сетевая ошибка")
+    }, 502);
+  }
+}
+
 async function onPost(request, env) {
   if (!sameOrigin(request)) {
     return json({
@@ -536,6 +596,10 @@ export async function onRequest(context) {
 
   if (method === "GET") {
     return onGet(context.request, context.env);
+  }
+
+  if (method === "DELETE") {
+    return onDelete(context.request, context.env);
   }
 
   if (method === "POST") {
