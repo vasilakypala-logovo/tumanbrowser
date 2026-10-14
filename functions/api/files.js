@@ -1,1121 +1,548 @@
 
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-<meta charset="UTF-8">
-<meta http-equiv="X-UA-Compatible" content="IE=edge">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ОБИТЕЛЬ ФАЙЛОВ · МАСКА ТУМАНА</title>
+const MAX_FILE_SIZE = 45 * 1024 * 1024;
+const DEFAULT_BUCKET = "tuman-files";
 
-<style>
-*{box-sizing:border-box}
-
-:root{
-  color-scheme:dark;
-  --bg:#081321;
-  --panel:#101f30;
-  --line:#36536e;
-  --text:#e8f3ff;
-  --muted:#a9c0d5;
-  --blue:#8acbff;
+function json(data, status) {
+  return new Response(JSON.stringify(data), {
+    status: status || 200,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff"
+    }
+  });
 }
 
-body{
-  margin:0;
-  padding:18px;
-  min-height:100vh;
-  color:var(--text);
-  background:
-    radial-gradient(ellipse at 15% 0%,#193a53 0%,transparent 42%),
-    radial-gradient(ellipse at 90% 90%,#18253b 0%,transparent 40%),
-    var(--bg);
-  font:14px Tahoma,Arial,sans-serif;
-}
+function sameOrigin(request) {
+  const origin = request.headers.get("Origin");
+  if (!origin) return true;
 
-main{max-width:1400px;margin:auto}
-
-header{
-  display:flex;
-  align-items:center;
-  gap:14px;
-  flex-wrap:wrap;
-  margin-bottom:20px;
-}
-
-.logo{
-  width:54px;height:54px;
-  display:grid;place-items:center;
-  border:1px solid #6796b8;
-  border-radius:18px;
-  background:#12283b;
-  font-size:29px;
-}
-
-h1{
-  margin:0 0 6px;
-  font-size:clamp(22px,3vw,32px);
-  letter-spacing:2px;
-}
-
-.subtitle{color:var(--muted);font-size:12px}
-.spacer{flex:1}
-
-button,.file-label{
-  padding:11px 14px;
-  color:var(--text);
-  background:#1a3952;
-  border:1px solid #527b9c;
-  border-radius:9px;
-  font:inherit;
-  cursor:pointer;
-}
-
-button:hover,.file-label:hover{
-  background:#285675;
-  border-color:var(--blue);
-}
-
-button:disabled{opacity:.5;cursor:wait}
-
-.panel{
-  background:#091725e8;
-  border:1px solid var(--line);
-  border-radius:14px;
-  padding:16px;
-  margin-bottom:16px;
-}
-
-#loginPanel{max-width:550px;margin:60px auto}
-
-label{display:block;margin-bottom:8px;color:#c5dcec}
-
-input[type=password]{
-  display:block;
-  width:100%;
-  padding:13px;
-  color:white;
-  background:#06101b;
-  border:1px solid #45627b;
-  border-radius:9px;
-  font:inherit;
-  margin-bottom:12px;
-}
-
-#status{
-  min-height:22px;
-  margin-top:12px;
-  color:#b9d7ed;
-  line-height:1.5;
-  overflow-wrap:anywhere;
-}
-
-.toolbar{
-  display:flex;
-  align-items:center;
-  flex-wrap:wrap;
-  gap:9px;
-  margin-bottom:12px;
-}
-
-#fileInput{display:none}
-
-.counter{
-  color:var(--muted);
-  margin-right:auto;
-}
-
-.tip{
-  color:var(--muted);
-  font-size:12px;
-  line-height:1.6;
-}
-
-#grid{
-  display:grid;
-  grid-template-columns:repeat(8,minmax(0,1fr));
-  gap:7px;
-  min-height:230px;
-}
-
-.cell{
-  min-width:0;
-  min-height:116px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  border:1px solid #27415980;
-  border-radius:11px;
-  background:#101f2b66;
-  transition:background .16s,border-color .16s;
-}
-
-.cell:hover{
-  background:#1b3549a0;
-  border-color:#527a98;
-}
-
-.cell.over{
-  background:#264963;
-  border:1px dashed var(--blue);
-}
-
-.tile{
-  width:100%;
-  height:100%;
-  min-width:0;
-  min-height:110px;
-  padding:9px 5px;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-  text-align:center;
-  gap:5px;
-  cursor:grab;
-  animation:arrive .55s cubic-bezier(.2,.8,.25,1) both;
-  animation-delay:var(--delay,0ms);
-}
-
-.tile:active{cursor:grabbing}
-
-.tile:focus-visible{
-  outline:2px solid var(--blue);
-  outline-offset:-3px;
-  border-radius:8px;
-}
-
-.file-icon{
-  font-size:29px;
-  line-height:1.15;
-  filter:drop-shadow(0 2px 5px #0008);
-}
-
-.file-name{
-  width:100%;
-  overflow-wrap:anywhere;
-  word-break:break-word;
-  font-size:11px;
-  line-height:1.35;
-}
-
-.file-size{
-  color:#9eb8cb;
-  font-size:10px;
-}
-
-.empty{
-  grid-column:1/-1;
-  min-height:230px;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-  gap:10px;
-  text-align:center;
-  color:var(--muted);
-  border:1px dashed #3e5b73;
-  border-radius:13px;
-  padding:25px;
-}
-
-.empty-icon{font-size:43px}
-
-/* Окно просмотра */
-
-.preview-overlay{
-  position:fixed;
-  inset:0;
-  z-index:9999;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  padding:16px;
-  background:rgba(0,5,12,.88);
-}
-
-.preview-dialog{
-  width:min(1120px,100%);
-  max-height:100%;
-  display:flex;
-  flex-direction:column;
-  overflow:hidden;
-  border:1px solid #537895;
-  border-radius:14px;
-  background:#071321;
-  box-shadow:0 16px 60px #000b;
-}
-
-.preview-bar{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  flex-wrap:wrap;
-  gap:10px;
-  padding:10px 14px;
-  border-bottom:1px solid #36536e;
-}
-
-#previewTitle{
-  min-width:0;
-  overflow-wrap:anywhere;
-  font-size:13px;
-}
-
-.preview-actions{
-  display:flex;
-  gap:8px;
-  flex-wrap:wrap;
-}
-
-#previewContent{
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  min-height:160px;
-  max-height:calc(100vh - 100px);
-  overflow:auto;
-  padding:12px;
-}
-
-#previewContent img{
-  display:block;
-  max-width:100%;
-  max-height:calc(100vh - 150px);
-  object-fit:contain;
-}
-
-#previewContent video{
-  display:block;
-  max-width:100%;
-  max-height:calc(100vh - 150px);
-}
-
-#previewContent audio{
-  width:min(620px,90vw);
-}
-
-#previewContent iframe{
-  width:min(1000px,88vw);
-  height:calc(100vh - 150px);
-  min-height:300px;
-  border:0;
-  background:white;
-}
-
-.preview-message{
-  color:#c6d9e9;
-  line-height:1.6;
-  text-align:center;
-  padding:24px;
-}
-
-footer{
-  color:#8ea9bf;
-  font-size:11px;
-  line-height:1.7;
-  margin:15px 0;
-}
-
-[hidden]{display:none!important}
-
-@keyframes arrive{
-  0%{
-    opacity:0;
-    transform:translate(var(--dx,30px),var(--dy,-25px))
-      rotate(9deg) scale(.65);
-  }
-  70%{opacity:1;transform:translate(0,0) rotate(-2deg) scale(1.04)}
-  100%{opacity:1;transform:translate(0,0) rotate(0) scale(1)}
-}
-
-@media(max-width:950px){
-  #grid{grid-template-columns:repeat(6,minmax(0,1fr))}
-}
-
-@media(max-width:650px){
-  body{padding:10px}
-  #grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
-  .cell{min-height:100px}
-  .tile{min-height:96px}
-  .file-icon{font-size:25px}
-}
-
-@media(max-width:390px){
-  #grid{grid-template-columns:repeat(3,minmax(0,1fr))}
-}
-
-@media(prefers-reduced-motion:reduce){
-  *,*::before,*::after{
-    animation-duration:.01ms!important;
-    transition-duration:.01ms!important;
+  try {
+    return new URL(request.url).origin === origin;
+  } catch (_) {
+    return false;
   }
 }
-</style>
-</head>
 
-<body>
-<main>
+function authorized(request, env) {
+  const expected = env.TUMAN_ACCESS_CODE;
+  const supplied = request.headers.get("X-Tuman-Key") || "";
 
-<header>
-  <div class="logo">☁</div>
-  <div>
-    <h1>ОБИТЕЛЬ ФАЙЛОВ</h1>
-    <div class="subtitle">МАСКА ТУМАНА · ТВОЁ ОБЛАЧНОЕ ПРОСТРАНСТВО</div>
-  </div>
-  <div class="spacer"></div>
-  <button type="button" id="homeButton">← МАСКА ТУМАНА</button>
-</header>
+  return typeof expected === "string" &&
+    expected.length >= 20 &&
+    supplied.length === expected.length &&
+    supplied === expected;
+}
 
-<section class="panel" id="loginPanel">
-  <h2>ВХОД В ОБИТЕЛЬ</h2>
-  <p class="tip">
-    Введи тот же код доступа, который используешь для Облачного.
-    Код нужен для соединения с твоим хранилищем.
-  </p>
-  <form id="loginForm">
-    <label for="accessCode">КОД ДОСТУПА</label>
-    <input id="accessCode" type="password"
-      autocomplete="off" maxlength="160"
-      placeholder="Введи код доступа">
-    <button type="submit" id="loginButton">ОТКРЫТЬ ОБИТЕЛЬ</button>
-  </form>
-  <div id="loginStatus" role="status" aria-live="polite"></div>
-</section>
+function getConfig(env) {
+  const base = String(env.SUPABASE_URL || "").replace(/\/+$/, "");
+  const key = env.SUPABASE_SECRET_KEY ||
+    env.SUPABASE_SERVICE_ROLE_KEY || "";
+  const bucket = String(
+    env.TUMAN_FILES_BUCKET || DEFAULT_BUCKET
+  ).trim();
 
-<section id="workspace" hidden>
-  <div class="panel">
-    <div class="toolbar">
-      <label for="fileInput" class="file-label">＋ ДОБАВИТЬ ФАЙЛЫ</label>
-      <input type="file" id="fileInput" multiple>
-      <button type="button" id="refreshButton">↻ ОБНОВИТЬ</button>
-      <button type="button" id="logoutButton">ЗАКРЫТЬ</button>
-      <div class="counter" id="counter">Файлов: 0</div>
-    </div>
-
-    <div id="status" role="status" aria-live="polite">
-      Соединение с Обителью…
-    </div>
-
-    <p class="tip">
-      Перетаскивай иконки мышью между ячейками.
-      Нажми на изображение, видео, аудио или PDF для просмотра.
-      Остальные файлы скачиваются. Можно также перетащить файлы
-      прямо с компьютера на поле.
-    </p>
-  </div>
-
-  <div class="panel">
-    <div id="grid" aria-label="Пространство файлов">
-      <div class="empty">Загружаю файловую полку…</div>
-    </div>
-  </div>
-</section>
-
-<div id="previewOverlay" class="preview-overlay" hidden
-  role="dialog" aria-modal="true" aria-label="Просмотр файла">
-  <div class="preview-dialog">
-    <div class="preview-bar">
-      <strong id="previewTitle">Просмотр файла</strong>
-      <div class="preview-actions">
-        <button type="button" id="previewDownloadButton">↓ СКАЧАТЬ</button>
-        <button type="button" id="previewCloseButton">ЗАКРЫТЬ</button>
-      </div>
-    </div>
-    <div id="previewContent">
-      <div class="preview-message">Выбери файл для просмотра.</div>
-    </div>
-  </div>
-</div>
-
-<footer>
-  ОБИТЕЛЬ · ФАЙЛЫ ХРАНЯТСЯ В ЗАКРЫТОМ ХРАНИЛИЩЕ.
-  Расположение иконок запоминается в этом браузере.
-  <br>
-  На первом этапе размер одного файла — до 45 МиБ.
-</footer>
-
-</main>
-
-<script>
-(function(){
-  "use strict";
-
-  var API = "/api/files";
-  var POSITION_KEY = "tuman_file_positions_v1";
-  var SESSION_KEY = "tuman_file_session_key";
-
-  var key = "";
-  var files = [];
-  var positions = {};
-  var busy = false;
-  var currentPreviewUrl = "";
-  var currentPreviewName = "";
-  var previewRequestId = 0;
-
-  function el(id){
-    return document.getElementById(id);
+  if (!/^https:\/\/[a-z0-9.-]+$/i.test(base)) {
+    throw new Error(
+      "Не настроен SUPABASE_URL в Cloudflare Pages."
+    );
   }
 
-  function say(message){
-    el("status").textContent = message;
+  if (typeof key !== "string" || key.length < 20) {
+    throw new Error(
+      "Добавь SUPABASE_SECRET_KEY в Cloudflare Pages."
+    );
   }
 
-  function loginSay(message){
-    el("loginStatus").textContent = message;
+  if (!/^[a-z0-9][a-z0-9_-]{1,61}[a-z0-9]$/.test(bucket)) {
+    throw new Error("Неверное имя файлового хранилища.");
   }
 
-  function readPositions(){
-    try{
-      var value = localStorage.getItem(POSITION_KEY);
-      var parsed = value ? JSON.parse(value) : {};
-      return parsed && typeof parsed === "object" ? parsed : {};
-    }catch(_){
-      return {};
+  const headers = {
+    "apikey": key,
+    "Accept": "application/json"
+  };
+
+  if (!key.startsWith("sb_secret_")) {
+    headers["Authorization"] = "Bearer " + key;
+  }
+
+  return {
+    base: base,
+    bucket: bucket,
+    headers: headers
+  };
+}
+
+async function errorText(response) {
+  const copy = response.clone();
+
+  try {
+    const data = await copy.json();
+    return data.message || data.error || data.msg ||
+      "HTTP " + response.status;
+  } catch (_) {
+    try {
+      return (await copy.text()).slice(0, 300) ||
+        "HTTP " + response.status;
+    } catch (_) {
+      return "HTTP " + response.status;
     }
   }
+}
 
-  function savePositions(){
-    try{
-      localStorage.setItem(POSITION_KEY,JSON.stringify(positions));
-    }catch(_){}
+async function ensureBucket(cfg) {
+  const url = cfg.base + "/storage/v1/bucket";
+
+  const listResponse = await fetch(url, {
+    headers: cfg.headers
+  });
+
+  if (!listResponse.ok) {
+    throw new Error(
+      "Не удалось проверить Supabase Storage: " +
+      await errorText(listResponse)
+    );
   }
 
-  function escapeName(value){
-    return String(value || "файл");
+  const buckets = await listResponse.json();
+
+  if (
+    Array.isArray(buckets) &&
+    buckets.some(function(item) {
+      return item && item.id === cfg.bucket;
+    })
+  ) {
+    return;
   }
 
-  function formatSize(bytes){
-    bytes = Number(bytes || 0);
-    if(bytes < 1024) return bytes + " Б";
-    if(bytes < 1024*1024) return (bytes/1024).toFixed(1) + " КБ";
-    if(bytes < 1024*1024*1024) return (bytes/1024/1024).toFixed(1) + " МБ";
-    return (bytes/1024/1024/1024).toFixed(2) + " ГБ";
-  }
+  const response = await fetch(url, {
+    method: "POST",
+    headers: Object.assign({}, cfg.headers, {
+      "Content-Type": "application/json"
+    }),
+    body: JSON.stringify({
+      id: cfg.bucket,
+      name: cfg.bucket,
+      public: false,
+      file_size_limit: MAX_FILE_SIZE
+    })
+  });
 
-  function iconFor(file){
-    var name = String(file.originalName || "").toLowerCase();
-    var type = String(file.type || "").toLowerCase();
+  if (response.ok) return;
 
-    if(type.indexOf("image/") === 0 || /\.(png|jpg|jpeg|gif|webp|bmp|svg)$/.test(name)) return "🖼️";
-    if(type.indexOf("audio/") === 0 || /\.(mp3|wav|ogg|flac|m4a)$/.test(name)) return "🎵";
-    if(type.indexOf("video/") === 0 || /\.(mp4|avi|mov|mkv|webm)$/.test(name)) return "🎬";
-    if(/\.pdf$/.test(name)) return "📕";
-    if(/\.(doc|docx|odt|rtf|txt|md)$/.test(name)) return "📄";
-    if(/\.(xls|xlsx|csv)$/.test(name)) return "📊";
-    if(/\.(zip|rar|7z|tar|gz)$/.test(name)) return "🗃️";
-    if(/\.(html|css|js|json|py|php)$/.test(name)) return "🧩";
-    return "📦";
-  }
+  const verify = await fetch(url, {
+    headers: cfg.headers
+  });
 
-  function previewKind(file){
-    var name = String(file.originalName || "").toLowerCase();
-    var type = String(file.type || "").toLowerCase();
+  if (verify.ok) {
+    const current = await verify.json();
 
-    if(type.indexOf("image/") === 0 ||
-       /\.(png|jpe?g|gif|webp|bmp|avif|svg|tif?f)$/.test(name)){
-      return "image";
-    }
-
-    if(type.indexOf("video/") === 0 ||
-       /\.(mp4|webm|mov|ogv|m4v)$/.test(name)){
-      return "video";
-    }
-
-    if(type.indexOf("audio/") === 0 ||
-       /\.(mp3|wav|ogg|flac|m4a|aac|opus)$/.test(name)){
-      return "audio";
-    }
-
-    if(type === "application/pdf" || /\.pdf$/.test(name)){
-      return "pdf";
-    }
-
-    return "";
-  }
-
-  function previewMime(file){
-    var type = String(file.type || "").toLowerCase();
-
-    if(type && type !== "application/octet-stream"){
-      return type;
-    }
-
-    var name = String(file.originalName || "").toLowerCase();
-    var map = {
-      ".jpg":"image/jpeg",
-      ".jpeg":"image/jpeg",
-      ".png":"image/png",
-      ".gif":"image/gif",
-      ".webp":"image/webp",
-      ".bmp":"image/bmp",
-      ".svg":"image/svg+xml",
-      ".tif":"image/tiff",
-      ".tiff":"image/tiff",
-      ".avif":"image/avif",
-      ".mp4":"video/mp4",
-      ".webm":"video/webm",
-      ".mov":"video/quicktime",
-      ".mp3":"audio/mpeg",
-      ".wav":"audio/wav",
-      ".ogg":"audio/ogg",
-      ".pdf":"application/pdf"
-    };
-
-    var ext = name.match(/\.[a-z0-9]+$/);
-    return (ext && map[ext[0]]) || type || "application/octet-stream";
-  }
-
-  function closePreview(){
-    previewRequestId++;
-    el("previewOverlay").hidden = true;
-    el("previewContent").textContent = "";
-
-    if(currentPreviewUrl){
-      URL.revokeObjectURL(currentPreviewUrl);
-      currentPreviewUrl = "";
-    }
-
-    currentPreviewName = "";
-  }
-
-  async function openFile(file){
-    var kind = previewKind(file);
-
-    if(!kind){
-      downloadFile(file);
+    if (
+      Array.isArray(current) &&
+      current.some(function(item) {
+        return item && item.id === cfg.bucket;
+      })
+    ) {
       return;
     }
+  }
 
-    var requestId = ++previewRequestId;
+  throw new Error(
+    "Не удалось создать закрытое хранилище: " +
+    await errorText(response)
+  );
+}
 
-    if(currentPreviewUrl){
-      URL.revokeObjectURL(currentPreviewUrl);
-      currentPreviewUrl = "";
+/* Новые имена файлов храним в ASCII-совместимом формате. */
+
+function encodeFileName(value) {
+  const bytes = new TextEncoder().encode(String(value || "file"));
+  let binary = "";
+
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function decodeFileName(value) {
+  try {
+    let base64 = String(value || "")
+      .replace(/-/g, "+")
+      .replace(/_/g, "/");
+
+    base64 += "=".repeat((4 - base64.length % 4) % 4);
+
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
     }
 
-    currentPreviewName = file.originalName || "файл";
-    el("previewTitle").textContent = currentPreviewName;
-    el("previewContent").innerHTML =
-      '<div class="preview-message">Загружаю файл из Обители…</div>';
-    el("previewOverlay").hidden = false;
-    say("Получаю файл для просмотра: " + currentPreviewName + "…");
+    const decoded = new TextDecoder("utf-8", {
+      fatal: true
+    }).decode(bytes);
 
-    try{
-      var result = await apiRequest(
-        API + "?action=download&name=" + encodeURIComponent(file.name),
-        {method:"GET"}
+    return decoded || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function safeOriginalName(value) {
+  let name = String(value || "файл")
+    .replace(/[\u0000-\u001f\u007f/\\]/g, "_")
+    .replace(/^\.+/, "")
+    .trim();
+
+  if (!name) name = "файл";
+
+  return Array.from(name).slice(0, 120).join("");
+}
+
+function originalNameFromKey(key) {
+  const match = /^([0-9a-f-]{36})__(.*)$/i.exec(
+    String(key || "")
+  );
+
+  if (!match || !match[2]) {
+    return String(key || "файл");
+  }
+
+  const suffix = match[2];
+
+  if (suffix.startsWith("b64_")) {
+    const decoded = decodeFileName(suffix.slice(4));
+    if (decoded) return decoded;
+  }
+
+  // Совместимость со старыми ASCII-именами.
+  return suffix;
+}
+
+function makeObjectKey(name) {
+  return crypto.randomUUID() + "__b64_" + encodeFileName(name);
+}
+
+/*
+ * При скачивании принимаем:
+ * 1. Новые ключи с префиксом b64_.
+ * 2. Старые ключи с ASCII-именем.
+ *
+ * Слеши, обратные слеши и имена с управляющими символами
+ * в старом формате не допускаются.
+ */
+
+function validKey(key) {
+  if (typeof key !== "string" || key.length > 900) {
+    return false;
+  }
+
+  if (/^[0-9a-f-]{36}__b64_[A-Za-z0-9_-]+$/i.test(key)) {
+    return true;
+  }
+
+  if (!/^[0-9a-f-]{36}__/.test(key)) {
+    return false;
+  }
+
+  const oldName = key.slice(38);
+
+  return oldName.length > 0 &&
+    oldName.length <= 180 &&
+    /^[\x20-\x7E]+$/.test(oldName) &&
+    !/[\\/]/.test(oldName) &&
+    oldName.trim() === oldName &&
+    oldName.charAt(0) !== ".";
+}
+
+function encodeObjectPath(path) {
+  return String(path)
+    .split("/")
+    .map(encodeURIComponent)
+    .join("/");
+}
+
+async function onGet(request, env) {
+  if (!sameOrigin(request)) {
+    return json({
+      error: "Запрос с другого сайта запрещён."
+    }, 403);
+  }
+
+  if (!authorized(request, env)) {
+    return json({
+      error: "Код доступа не принят."
+    }, 401);
+  }
+
+  let cfg;
+
+  try {
+    cfg = getConfig(env);
+    await ensureBucket(cfg);
+  } catch (error) {
+    return json({
+      error: error.message || "Не удалось подключить Обитель."
+    }, 503);
+  }
+
+  const url = new URL(request.url);
+  const action = url.searchParams.get("action") || "list";
+
+  if (action === "list") {
+    try {
+      const response = await fetch(
+        cfg.base + "/storage/v1/object/list/" +
+        encodeURIComponent(cfg.bucket),
+        {
+          method: "POST",
+          headers: Object.assign({}, cfg.headers, {
+            "Content-Type": "application/json"
+          }),
+          body: JSON.stringify({
+            prefix: "",
+            limit: 200,
+            offset: 0,
+            sortBy: {
+              column: "created_at",
+              order: "desc"
+            }
+          })
+        }
       );
 
-      var blob = await result.response.blob();
-
-      if(requestId !== previewRequestId) return;
-
-      var mime = previewMime(file);
-
-      if((!blob.type || blob.type === "application/octet-stream") &&
-         mime !== "application/octet-stream"){
-        blob = new Blob([blob],{type:mime});
+      if (!response.ok) {
+        return json({
+          error: "Не удалось получить список файлов: " +
+            await errorText(response)
+        }, 502);
       }
 
-      currentPreviewUrl = URL.createObjectURL(blob);
+      const raw = await response.json();
 
-      var content = el("previewContent");
-      content.textContent = "";
+      const files = (Array.isArray(raw) ? raw : [])
+        .filter(function(item) {
+          return item &&
+            typeof item.name === "string" &&
+            typeof item.id === "string";
+        })
+        .map(function(item) {
+          const meta = item.metadata || {};
 
-      var media;
-
-      if(kind === "image"){
-        media = document.createElement("img");
-        media.alt = currentPreviewName;
-        media.src = currentPreviewUrl;
-      }else if(kind === "video"){
-        media = document.createElement("video");
-        media.src = currentPreviewUrl;
-        media.controls = true;
-        media.autoplay = false;
-        media.preload = "metadata";
-      }else if(kind === "audio"){
-        media = document.createElement("audio");
-        media.src = currentPreviewUrl;
-        media.controls = true;
-        media.preload = "metadata";
-      }else{
-        media = document.createElement("iframe");
-        media.src = currentPreviewUrl;
-        media.title = currentPreviewName;
-      }
-
-      content.appendChild(media);
-
-      if(kind === "image"){
-        media.addEventListener("error",function(){
-          say("Изображение получено, но браузер не смог показать его формат.");
-        });
-      }
-
-      say("Просмотр открыт: " + currentPreviewName);
-    }catch(error){
-      if(requestId !== previewRequestId) return;
-
-      el("previewContent").textContent =
-        error.message || "Не удалось открыть файл.";
-      say(error.message || "Не удалось открыть файл.");
-    }
-  }
-
-  async function apiRequest(url,options){
-    var response = await fetch(url,Object.assign({},options || {},{
-      cache:"no-store",
-      headers:Object.assign({},options && options.headers || {},{
-        "X-Tuman-Key":key
-      })
-    }));
-
-    var data = null;
-
-    if((response.headers.get("Content-Type") || "").indexOf("application/json") >= 0){
-      data = await response.json();
-    }
-
-    if(!response.ok){
-      throw new Error(data && data.error ? data.error : "Ошибка сервера: " + response.status);
-    }
-
-    return {response:response,data:data};
-  }
-
-  function normalizePositions(){
-    var used = {};
-    var next = 0;
-
-    files.forEach(function(file){
-      var saved = positions[file.name];
-      var slot = Number(saved);
-
-      if(!Number.isInteger(slot) || slot < 0 || used[slot]){
-        while(used[next]) next++;
-        slot = next;
-      }
-
-      positions[file.name] = slot;
-      used[slot] = true;
-      next = Math.max(next,slot+1);
-    });
-
-    savePositions();
-  }
-
-  function makeTile(file,index){
-    var tile = document.createElement("div");
-    tile.className = "tile";
-    tile.draggable = true;
-    tile.tabIndex = 0;
-    tile.title = escapeName(file.originalName) +
-      (previewKind(file) ? " — нажми, чтобы посмотреть" : " — нажми, чтобы скачать");
-    tile.dataset.name = file.name;
-    tile.style.setProperty("--delay",Math.min(index*22,330)+"ms");
-    tile.style.setProperty("--dx",(Math.random()*130-65)+"px");
-    tile.style.setProperty("--dy",(Math.random()*90-45)+"px");
-
-    var icon = document.createElement("div");
-    icon.className = "file-icon";
-    icon.textContent = iconFor(file);
-
-    var name = document.createElement("div");
-    name.className = "file-name";
-    name.textContent = escapeName(file.originalName);
-
-    var size = document.createElement("div");
-    size.className = "file-size";
-    size.textContent = formatSize(file.size);
-
-    tile.appendChild(icon);
-    tile.appendChild(name);
-    tile.appendChild(size);
-
-    tile.addEventListener("click",function(){
-      openFile(file);
-    });
-
-    tile.addEventListener("keydown",function(event){
-      if(event.key === "Enter" || event.key === " "){
-        event.preventDefault();
-        openFile(file);
-      }
-    });
-
-    tile.addEventListener("dragstart",function(event){
-      event.dataTransfer.setData("text/plain",file.name);
-      event.dataTransfer.effectAllowed = "move";
-      tile.style.opacity = ".45";
-    });
-
-    tile.addEventListener("dragend",function(){
-      tile.style.opacity = "1";
-      var cells = el("grid").querySelectorAll(".cell");
-      Array.prototype.forEach.call(cells,function(cell){
-        cell.classList.remove("over");
-      });
-    });
-
-    return tile;
-  }
-
-  function render(){
-    normalizePositions();
-
-    var grid = el("grid");
-    grid.textContent = "";
-
-    var maxSlot = -1;
-
-    files.forEach(function(file){
-      maxSlot = Math.max(maxSlot,positions[file.name]);
-    });
-
-    var count = Math.max(48,files.length+8,maxSlot+1);
-    count = Math.min(count,600);
-
-    var cells = [];
-
-    for(var i=0;i<count;i++){
-      var cell = document.createElement("div");
-      cell.className = "cell";
-      cell.dataset.index = String(i);
-
-      cell.addEventListener("dragover",function(event){
-        event.preventDefault();
-        event.dataTransfer.dropEffect =
-          event.dataTransfer.files.length ? "copy" : "move";
-        this.classList.add("over");
-      });
-
-      cell.addEventListener("dragleave",function(){
-        this.classList.remove("over");
-      });
-
-      cell.addEventListener("drop",function(event){
-        event.preventDefault();
-        event.stopPropagation();
-        this.classList.remove("over");
-
-        if(event.dataTransfer.files && event.dataTransfer.files.length){
-          uploadFiles(Array.prototype.slice.call(event.dataTransfer.files));
-          return;
-        }
-
-        var dragged = event.dataTransfer.getData("text/plain");
-
-        if(!dragged ||
-           !Object.prototype.hasOwnProperty.call(positions,dragged)){
-          return;
-        }
-
-        var target = Number(this.dataset.index);
-        var old = Number(positions[dragged]);
-
-        if(target === old) return;
-
-        var targetFile = files.find(function(item){
-          return positions[item.name] === target;
+          return {
+            name: item.name,
+            originalName: originalNameFromKey(item.name),
+            size: Number(meta.size || meta.contentLength || 0),
+            type: String(
+              meta.mimetype ||
+              meta.contentType ||
+              "application/octet-stream"
+            ),
+            createdAt: item.created_at ||
+              item.updated_at || null
+          };
         });
 
-        positions[dragged] = target;
-
-        if(targetFile){
-          positions[targetFile.name] = old;
-        }
-
-        savePositions();
-        render();
+      return json({
+        ok: true,
+        bucket: cfg.bucket,
+        files: files
       });
-
-      cells.push(cell);
-      grid.appendChild(cell);
+    } catch (error) {
+      return json({
+        error: "Ошибка списка файлов: " +
+          (error.message || "сетевая ошибка")
+      }, 502);
     }
-
-    files.forEach(function(file,index){
-      var slot = Number(positions[file.name]);
-
-      if(slot >= 0 && slot < cells.length){
-        cells[slot].appendChild(makeTile(file,index));
-      }
-    });
-
-    if(files.length === 0){
-      var empty = document.createElement("div");
-      empty.className = "empty";
-      empty.innerHTML =
-        '<div class="empty-icon">☁️</div>' +
-        '<strong>ОБИТЕЛЬ ПОКА ПУСТА</strong>' +
-        '<div>Добавь первый файл с компьютера.</div>';
-
-      grid.textContent = "";
-      grid.appendChild(empty);
-    }
-
-    el("counter").textContent = "Файлов: " + files.length;
   }
 
-  async function loadFiles(){
-    if(busy) return;
+  if (action === "download") {
+    const key = url.searchParams.get("name") || "";
 
-    busy = true;
-    el("refreshButton").disabled = true;
-    say("Проверяю хранилище и получаю список файлов…");
+    if (!validKey(key)) {
+      return json({
+        error: "Неверное имя файла."
+      }, 400);
+    }
 
-    try{
-      var result = await apiRequest(
-        API + "?action=list",
-        {method:"GET"}
+    try {
+      const response = await fetch(
+        cfg.base + "/storage/v1/object/" +
+        encodeURIComponent(cfg.bucket) + "/" +
+        encodeObjectPath(key),
+        { headers: cfg.headers }
       );
 
-      files = result.data && Array.isArray(result.data.files)
-        ? result.data.files : [];
-
-      positions = readPositions();
-      render();
-
-      say("Соединение установлено. Файлы в Обители: " + files.length + ".");
-    }catch(error){
-      say(error.message || "Не удалось получить список файлов.");
-    }finally{
-      busy = false;
-      el("refreshButton").disabled = false;
-    }
-  }
-
-  async function uploadFiles(selected){
-    if(!selected || !selected.length || busy) return;
-
-    busy = true;
-    el("refreshButton").disabled = true;
-
-    var success = 0;
-    var errors = [];
-
-    try{
-      for(var i=0;i<selected.length;i++){
-        var file = selected[i];
-
-        if(file.size > 45*1024*1024){
-          errors.push(file.name + ": больше 45 МиБ");
-          continue;
-        }
-
-        say("Загрузка " + (i+1) + " из " + selected.length + ": " + file.name);
-
-        var form = new FormData();
-        form.append("file",file,file.name);
-
-        try{
-          var result = await apiRequest(API,{
-            method:"POST",
-            body:form
-          });
-
-          if(result.data && result.data.file){
-            positions[result.data.file.name] = undefined;
-          }
-
-          success++;
-        }catch(error){
-          errors.push(file.name + ": " + (error.message || "ошибка"));
-        }
+      if (!response.ok) {
+        return json({
+          error: "Не удалось скачать файл: " +
+            await errorText(response)
+        }, 502);
       }
 
-      await refreshAfterUpload(success,errors);
-    }finally{
-      busy = false;
-      el("refreshButton").disabled = false;
-      el("fileInput").value = "";
-    }
-  }
+      const filename = originalNameFromKey(key);
+      const headers = new Headers();
 
-  async function refreshAfterUpload(success,errors){
-    try{
-      var result = await apiRequest(
-        API + "?action=list",
-        {method:"GET"}
+      headers.set(
+        "Content-Type",
+        response.headers.get("Content-Type") ||
+          "application/octet-stream"
       );
 
-      files = result.data && Array.isArray(result.data.files)
-        ? result.data.files : [];
-
-      positions = readPositions();
-      render();
-
-      var message = "Загрузка завершена. Успешно: " + success + ".";
-
-      if(errors.length){
-        message += " Не удалось загрузить: " +
-          errors.length + ". " + errors.slice(0,3).join("; ");
-      }
-
-      say(message);
-    }catch(error){
-      say("Файлы отправлены: " + success +
-        ". Не удалось обновить список: " + error.message);
-    }
-  }
-
-  async function downloadFile(file){
-    if(busy) return;
-
-    say("Получаю файл: " + file.originalName + "…");
-
-    try{
-      var result = await apiRequest(
-        API + "?action=download&name=" + encodeURIComponent(file.name),
-        {method:"GET"}
+      headers.set(
+        "Content-Disposition",
+        "attachment; filename*=UTF-8''" +
+          encodeURIComponent(filename)
       );
 
-      var blob = await result.response.blob();
-      var objectUrl = URL.createObjectURL(blob);
-      var link = document.createElement("a");
+      headers.set("Cache-Control", "no-store");
+      headers.set("X-Content-Type-Options", "nosniff");
 
-      link.href = objectUrl;
-      link.download = file.originalName || "файл";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      const length = response.headers.get("Content-Length");
+      if (length) headers.set("Content-Length", length);
 
-      setTimeout(function(){
-        URL.revokeObjectURL(objectUrl);
-      },1500);
-
-      say("Файл подготовлен к скачиванию: " + file.originalName);
-    }catch(error){
-      say(error.message || "Не удалось скачать файл.");
-    }
-  }
-
-  function openWorkspace(savedKey){
-    key = savedKey;
-    el("loginPanel").hidden = true;
-    el("workspace").hidden = false;
-    loadFiles();
-  }
-
-  el("loginForm").addEventListener("submit",function(event){
-    event.preventDefault();
-
-    var value = el("accessCode").value.trim();
-
-    if(value.length < 20){
-      loginSay("Код должен содержать не менее 20 символов.");
-      return;
-    }
-
-    el("loginButton").disabled = true;
-    loginSay("Проверяю код и подключаю Обитель…");
-
-    key = value;
-
-    apiRequest(API + "?action=list",{method:"GET"})
-      .then(function(result){
-        files = result.data && Array.isArray(result.data.files)
-          ? result.data.files : [];
-
-        positions = readPositions();
-
-        try{
-          sessionStorage.setItem(SESSION_KEY,value);
-        }catch(_){}
-
-        el("loginPanel").hidden = true;
-        el("workspace").hidden = false;
-        render();
-
-        say("Вход выполнен. Файлов в Обители: " + files.length + ".");
-      })
-      .catch(function(error){
-        key = "";
-        loginSay(error.message || "Не удалось войти.");
-      })
-      .finally(function(){
-        el("loginButton").disabled = false;
+      return new Response(response.body, {
+        status: 200,
+        headers: headers
       });
-  });
-
-  el("fileInput").addEventListener("change",function(){
-    uploadFiles(Array.prototype.slice.call(this.files || []));
-  });
-
-  el("refreshButton").addEventListener("click",loadFiles);
-
-  el("previewCloseButton").addEventListener("click",closePreview);
-
-  el("previewOverlay").addEventListener("click",function(event){
-    if(event.target === this) closePreview();
-  });
-
-  el("previewDownloadButton").addEventListener("click",function(){
-    if(!currentPreviewUrl || !currentPreviewName) return;
-
-    var link = document.createElement("a");
-    link.href = currentPreviewUrl;
-    link.download = currentPreviewName;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-
-    say("Файл подготовлен к скачиванию: " + currentPreviewName);
-  });
-
-  document.addEventListener("keydown",function(event){
-    if(event.key === "Escape" && !el("previewOverlay").hidden){
-      closePreview();
+    } catch (error) {
+      return json({
+        error: "Ошибка скачивания: " +
+          (error.message || "сетевая ошибка")
+      }, 502);
     }
-  });
+  }
 
-  el("logoutButton").addEventListener("click",function(){
-    closePreview();
-    key = "";
-    files = [];
+  return json({
+    error: "Неизвестное действие."
+  }, 400);
+}
 
-    try{
-      sessionStorage.removeItem(SESSION_KEY);
-    }catch(_){}
+async function onPost(request, env) {
+  if (!sameOrigin(request)) {
+    return json({
+      error: "Запрос с другого сайта запрещён."
+    }, 403);
+  }
 
-    el("workspace").hidden = true;
-    el("loginPanel").hidden = false;
-    el("accessCode").value = "";
-    loginSay("Обитель закрыта.");
-    el("accessCode").focus();
-  });
+  if (!authorized(request, env)) {
+    return json({
+      error: "Код доступа не принят."
+    }, 401);
+  }
 
-  el("homeButton").addEventListener("click",function(){
-    window.location.href = "/";
-  });
+  const contentType = request.headers.get("Content-Type") || "";
 
-  el("grid").addEventListener("dragover",function(event){
-    if(event.dataTransfer &&
-       event.dataTransfer.files &&
-       event.dataTransfer.files.length){
-      event.preventDefault();
+  if (!contentType.toLowerCase().includes("multipart/form-data")) {
+    return json({
+      error: "Ожидается загрузка файла через форму."
+    }, 415);
+  }
+
+  let form;
+
+  try {
+    form = await request.formData();
+  } catch (_) {
+    return json({
+      error: "Не удалось прочитать загружаемый файл."
+    }, 400);
+  }
+
+  const file = form.get("file");
+
+  if (
+    !file ||
+    typeof file === "string" ||
+    typeof file.stream !== "function"
+  ) {
+    return json({ error: "Файл не найден." }, 400);
+  }
+
+  if (file.size < 1) {
+    return json({ error: "Пустой файл." }, 400);
+  }
+
+  if (file.size > MAX_FILE_SIZE) {
+    return json({
+      error: "На первом этапе предел — 45 МиБ на один файл."
+    }, 413);
+  }
+
+  const name = safeOriginalName(file.name);
+  const key = makeObjectKey(name);
+
+  let cfg;
+
+  try {
+    cfg = getConfig(env);
+    await ensureBucket(cfg);
+  } catch (error) {
+    return json({
+      error: error.message || "Не удалось подключить Обитель."
+    }, 503);
+  }
+
+  try {
+    const response = await fetch(
+      cfg.base + "/storage/v1/object/" +
+      encodeURIComponent(cfg.bucket) + "/" +
+      encodeObjectPath(key),
+      {
+        method: "POST",
+        headers: Object.assign({}, cfg.headers, {
+          "Content-Type": file.type || "application/octet-stream",
+          "x-upsert": "false",
+          "cache-control": "3600"
+        }),
+        body: file
+      }
+    );
+
+    if (!response.ok) {
+      return json({
+        error: "Supabase не принял файл: " +
+          await errorText(response)
+      }, 502);
     }
-  });
 
-  el("grid").addEventListener("drop",function(event){
-    if(event.dataTransfer &&
-       event.dataTransfer.files &&
-       event.dataTransfer.files.length){
-      event.preventDefault();
-      uploadFiles(Array.prototype.slice.call(event.dataTransfer.files));
-    }
-  });
+    return json({
+      ok: true,
+      file: {
+        name: key,
+        originalName: name,
+        size: file.size,
+        type: file.type || "application/octet-stream",
+        createdAt: new Date().toISOString()
+      }
+    }, 201);
+  } catch (error) {
+    return json({
+      error: "Ошибка загрузки: " +
+        (error.message || "сетевая ошибка")
+    }, 502);
+  }
+}
 
-  try{
-    var savedKey = sessionStorage.getItem(SESSION_KEY);
+export async function onRequest(context) {
+  const method = context.request.method.toUpperCase();
 
-    if(savedKey && savedKey.length >= 20){
-      key = savedKey;
-      el("accessCode").value = savedKey;
-      openWorkspace(savedKey);
-    }
-  }catch(_){}
-})();
-</script>
-</body>
-</html>
+  if (method === "GET") {
+    return onGet(context.request, context.env);
+  }
+
+  if (method === "POST") {
+    return onPost(context.request, context.env);
+  }
+
+  return json({
+    error: "Метод не поддерживается."
+  }, 405);
+}
