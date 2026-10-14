@@ -3,9 +3,7 @@ const MODEL = "@cf/zai-org/glm-4.7-flash";
 function isSameOrigin(request) {
   const origin = request.headers.get("Origin");
 
-  if (!origin) {
-    return false;
-  }
+  if (!origin) return false;
 
   try {
     return new URL(request.url).origin === origin;
@@ -33,6 +31,26 @@ function json(data, status, request) {
   });
 }
 
+function extractText(value) {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(function(part) {
+      if (typeof part === "string") return part;
+
+      if (part && typeof part.text === "string") {
+        return part.text;
+      }
+
+      return "";
+    }).join("").trim();
+  }
+
+  return "";
+}
+
 export function onRequestOptions({ request }) {
   if (!isSameOrigin(request)) {
     return new Response(null, { status: 403 });
@@ -53,7 +71,7 @@ export function onRequestOptions({ request }) {
 export async function onRequestPost({ request, env }) {
   if (!isSameOrigin(request)) {
     return json({
-      error: "Запрос должен поступать с того же сайта. Открой https://tumanbrowser.pages.dev/ и повтори попытку."
+      error: "Открой https://tumanbrowser.pages.dev/ и повтори попытку."
     }, 403, request);
   }
 
@@ -61,7 +79,7 @@ export async function onRequestPost({ request, env }) {
 
   if (typeof accessCode !== "string" || accessCode.length < 20) {
     return json({
-      error: "Не настроен секрет TUMAN_ACCESS_CODE. Проверь Production в настройках Cloudflare Pages и выполни повторное развёртывание."
+      error: "Не настроен TUMAN_ACCESS_CODE. Проверь секрет в Production и повторное развёртывание."
     }, 503, request);
   }
 
@@ -72,13 +90,13 @@ export async function onRequestPost({ request, env }) {
     suppliedCode !== accessCode
   ) {
     return json({
-      error: "Код доступа не принят. Проверь код, сохранённый в Cloudflare."
+      error: "Код доступа не принят. Проверь код в Cloudflare."
     }, 401, request);
   }
 
   if (!env.AI || typeof env.AI.run !== "function") {
     return json({
-      error: "Нет привязки Workers AI. В Cloudflare Pages добавь AI binding с именем AI и повторно разверни сайт."
+      error: "Не подключена привязка Workers AI с именем AI."
     }, 503, request);
   }
 
@@ -173,12 +191,11 @@ export async function onRequestPost({ request, env }) {
     "Будь дружелюбным, творческим, практичным и честным. " +
     "Помогай разрабатывать идеи, решать задачи и создавать проекты. " +
     "Не выдумывай факты, результаты проверок или выполненные действия. " +
-    "Не утверждай, что у тебя есть доступ к файлам, сайтам или памяти " +
+    "Не утверждай, что имеешь доступ к файлам, сайтам или истории " +
     "других чатов, если они не переданы в запросе. " +
     "Ты отдельный облачный ИИ, а не ChatGPT, и не обладаешь его памятью. " +
-    "Если действие может повлечь расходы, потерю данных или изменение " +
-    "внешних систем, сначала объясняй последствия. " +
-    "Не раскрывай секреты доступа и не проси передавать пароли.";
+    "При действиях, способных повлечь расходы или потерю данных, " +
+    "сначала объясняй последствия. Не раскрывай секреты доступа.";
 
   try {
     const result = await env.AI.run(MODEL, {
@@ -187,45 +204,81 @@ export async function onRequestPost({ request, env }) {
         ...messages
       ],
       max_tokens: 420,
-      temperature: 0.65
+      temperature: 0.65,
+      reasoning_effort: "low",
+      chat_template_kwargs: {
+        enable_thinking: false
+      }
     });
 
     let answer = "";
 
-    if (result && typeof result.response === "string") {
-      answer = result.response;
-    } else if (
-      result &&
-      result.result &&
-      typeof result.result.response === "string"
-    ) {
-      answer = result.result.response;
-    } else if (
-      result &&
-      typeof result.output_text === "string"
-    ) {
-      answer = result.output_text;
-    } else if (
-      result &&
-      typeof result.text === "string"
-    ) {
-      answer = result.text;
+    // Основной формат Workers AI для GLM:
+    // choices[0].message.content
+    if (result && Array.isArray(result.choices)) {
+      for (const choice of result.choices) {
+        if (!choice || !choice.message) continue;
+
+        answer = extractText(choice.message.content);
+
+        if (answer) break;
+      }
     }
 
-    if (!answer.trim()) {
+    // Дополнительные форматы ответа.
+    if (!answer && result) {
+      answer = extractText(result.response);
+    }
+
+    if (!answer && result && result.result) {
+      const nested = result.result;
+
+      if (Array.isArray(nested.choices)) {
+        for (const choice of nested.choices) {
+          if (!choice || !choice.message) continue;
+
+          answer = extractText(choice.message.content);
+
+          if (answer) break;
+        }
+      }
+
+      if (!answer) {
+        answer = extractText(nested.response);
+      }
+    }
+
+    if (!answer && result) {
+      answer = extractText(result.output_text);
+    }
+
+    if (!answer && result) {
+      answer = extractText(result.text);
+    }
+
+    if (!answer) {
+      const fields = result && typeof result === "object"
+        ? Object.keys(result).join(", ")
+        : typeof result;
+
       return json({
-        error: "Модель вернула пустой ответ. Проверь доступность модели и квоту Cloudflare."
+        error:
+          "Cloudflare вызвал модель, но текст ответа не найден. " +
+          "Полученные поля: " + (fields || "нет данных") +
+          ". Это поможет определить формат ответа."
       }, 502, request);
     }
 
     return json({
-      answer: answer.trim(),
+      answer: answer,
       model: MODEL
     }, 200, request);
 
   } catch (_) {
     return json({
-      error: "Облачный ИИ не ответил. Проверь привязку AI, модель и квоту Cloudflare."
+      error:
+        "Ошибка вызова Workers AI. Проверь доступность модели, " +
+        "настройки Cloudflare и квоту."
     }, 502, request);
   }
 }
