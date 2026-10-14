@@ -64,8 +64,8 @@ function getConfig(env) {
     "Accept": "application/json"
   };
 
-  // Старый service_role — это JWT.
-  // Новый sb_secret_ передаём только как apikey.
+  // Старый service_role — JWT.
+  // Новый sb_secret_ передаётся как apikey.
   if (!key.startsWith("sb_secret_")) {
     headers["Authorization"] = "Bearer " + key;
   }
@@ -134,7 +134,7 @@ async function ensureBucket(cfg) {
 
   if (response.ok) return;
 
-  // Проверяем, не создал ли бакет параллельный запрос.
+  // Возможно, хранилище создал параллельный запрос.
   const verify = await fetch(url, {
     headers: cfg.headers
   });
@@ -158,14 +158,52 @@ async function ensureBucket(cfg) {
   );
 }
 
-function objectPath(name) {
-  return String(name)
-    .split("/")
-    .map(encodeURIComponent)
-    .join("/");
+/*
+ * Кодируем исходное имя в UTF-8, затем в Base64URL.
+ * В имени объекта остаются только ASCII-символы,
+ * цифры, подчёркивания и дефисы.
+ */
+
+function encodeFileName(value) {
+  const bytes = new TextEncoder().encode(String(value || "file"));
+  let binary = "";
+
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
 }
 
-function safeFileName(value) {
+function decodeFileName(value) {
+  try {
+    let base64 = String(value || "")
+      .replace(/-/g, "+")
+      .replace(/_/g, "/");
+
+    base64 += "=".repeat((4 - base64.length % 4) % 4);
+
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+
+    const decoded = new TextDecoder("utf-8", {
+      fatal: true
+    }).decode(bytes);
+
+    return decoded || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function safeOriginalName(value) {
   let name = String(value || "файл")
     .replace(/[\u0000-\u001f\u007f/\\]/g, "_")
     .replace(/^\.+/, "")
@@ -176,27 +214,58 @@ function safeFileName(value) {
   return Array.from(name).slice(0, 120).join("");
 }
 
-function originalName(key) {
+function originalNameFromKey(key) {
   const match = /^([0-9a-f-]{36})__(.*)$/i.exec(
     String(key || "")
   );
 
-  return match && match[2] ? match[2] : String(key || "файл");
+  if (!match || !match[2]) {
+    return String(key || "файл");
+  }
+
+  const suffix = match[2];
+
+  // Новые файлы получают префикс b64_.
+  if (suffix.startsWith("b64_")) {
+    const decoded = decodeFileName(suffix.slice(4));
+
+    if (decoded) return decoded;
+  }
+
+  // Поддержка старых файлов с ASCII-именами.
+  return suffix;
+}
+
+function makeObjectKey(originalName) {
+  return crypto.randomUUID() +
+    "__b64_" +
+    encodeFileName(originalName);
+}
+
+function encodeObjectPath(path) {
+  return String(path)
+    .split("/")
+    .map(encodeURIComponent)
+    .join("/");
 }
 
 function validKey(key) {
   return typeof key === "string" &&
-    key.length <= 220 &&
-    /^[0-9a-f-]{36}__[^/\\]+$/i.test(key);
+    key.length <= 900 &&
+    /^[0-9a-f-]{36}__b64_[A-Za-z0-9_-]+$/i.test(key);
 }
 
 async function onGet(request, env) {
   if (!sameOrigin(request)) {
-    return json({ error: "Запрос с другого сайта запрещён." }, 403);
+    return json({
+      error: "Запрос с другого сайта запрещён."
+    }, 403);
   }
 
   if (!authorized(request, env)) {
-    return json({ error: "Код доступа не принят." }, 401);
+    return json({
+      error: "Код доступа не принят."
+    }, 401);
   }
 
   let cfg;
@@ -206,7 +275,8 @@ async function onGet(request, env) {
     await ensureBucket(cfg);
   } catch (error) {
     return json({
-      error: error.message || "Не удалось подключить Обитель."
+      error: error.message ||
+        "Не удалось подключить Обитель."
     }, 503);
   }
 
@@ -255,14 +325,17 @@ async function onGet(request, env) {
 
           return {
             name: item.name,
-            originalName: originalName(item.name),
-            size: Number(meta.size || 0),
+            originalName: originalNameFromKey(item.name),
+            size: Number(
+              meta.size || meta.contentLength || 0
+            ),
             type: String(
               meta.mimetype ||
               meta.contentType ||
               "application/octet-stream"
             ),
-            createdAt: item.created_at || item.updated_at || null
+            createdAt: item.created_at ||
+              item.updated_at || null
           };
         });
 
@@ -283,14 +356,16 @@ async function onGet(request, env) {
     const key = url.searchParams.get("name") || "";
 
     if (!validKey(key)) {
-      return json({ error: "Неверное имя файла." }, 400);
+      return json({
+        error: "Неверное имя файла."
+      }, 400);
     }
 
     try {
       const response = await fetch(
         cfg.base + "/storage/v1/object/" +
         encodeURIComponent(cfg.bucket) + "/" +
-        objectPath(key),
+        encodeObjectPath(key),
         { headers: cfg.headers }
       );
 
@@ -301,18 +376,19 @@ async function onGet(request, env) {
         }, 502);
       }
 
+      const filename = originalNameFromKey(key);
       const headers = new Headers();
 
       headers.set(
         "Content-Type",
         response.headers.get("Content-Type") ||
-        "application/octet-stream"
+          "application/octet-stream"
       );
 
       headers.set(
         "Content-Disposition",
         "attachment; filename*=UTF-8''" +
-          encodeURIComponent(originalName(key))
+          encodeURIComponent(filename)
       );
 
       headers.set("Cache-Control", "no-store");
@@ -333,16 +409,22 @@ async function onGet(request, env) {
     }
   }
 
-  return json({ error: "Неизвестное действие." }, 400);
+  return json({
+    error: "Неизвестное действие."
+  }, 400);
 }
 
 async function onPost(request, env) {
   if (!sameOrigin(request)) {
-    return json({ error: "Запрос с другого сайта запрещён." }, 403);
+    return json({
+      error: "Запрос с другого сайта запрещён."
+    }, 403);
   }
 
   if (!authorized(request, env)) {
-    return json({ error: "Код доступа не принят." }, 401);
+    return json({
+      error: "Код доступа не принят."
+    }, 401);
   }
 
   const contentType = request.headers.get("Content-Type") || "";
@@ -365,13 +447,20 @@ async function onPost(request, env) {
 
   const file = form.get("file");
 
-  if (!file || typeof file === "string" ||
-      typeof file.stream !== "function") {
-    return json({ error: "Файл не найден." }, 400);
+  if (
+    !file ||
+    typeof file === "string" ||
+    typeof file.stream !== "function"
+  ) {
+    return json({
+      error: "Файл не найден."
+    }, 400);
   }
 
   if (file.size < 1) {
-    return json({ error: "Пустой файл." }, 400);
+    return json({
+      error: "Пустой файл."
+    }, 400);
   }
 
   if (file.size > MAX_FILE_SIZE) {
@@ -380,8 +469,9 @@ async function onPost(request, env) {
     }, 413);
   }
 
-  const name = safeFileName(file.name);
-  const key = crypto.randomUUID() + "__" + name;
+  // Исходное имя сохраняем отдельно от технического ключа.
+  const name = safeOriginalName(file.name);
+  const key = makeObjectKey(name);
 
   let cfg;
 
@@ -390,7 +480,8 @@ async function onPost(request, env) {
     await ensureBucket(cfg);
   } catch (error) {
     return json({
-      error: error.message || "Не удалось подключить Обитель."
+      error: error.message ||
+        "Не удалось подключить Обитель."
     }, 503);
   }
 
@@ -398,7 +489,7 @@ async function onPost(request, env) {
     const response = await fetch(
       cfg.base + "/storage/v1/object/" +
       encodeURIComponent(cfg.bucket) + "/" +
-      objectPath(key),
+      encodeObjectPath(key),
       {
         method: "POST",
         headers: Object.assign({}, cfg.headers, {
@@ -447,6 +538,7 @@ export async function onRequest(context) {
     return onPost(context.request, context.env);
   }
 
-  return json({ error: "Метод не поддерживается." }, 405);
+  return json({
+    error: "Метод не поддерживается."
+  }, 405);
 }
-
